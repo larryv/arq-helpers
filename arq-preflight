@@ -1,0 +1,89 @@
+#!/bin/bash
+
+# TODO Write file header.
+
+# Shell-quote the argument and print it to standard output
+# (http://www.etalabs.net/sh_tricks.html, § "Shell-quoting arbitrary
+# strings").
+quote() {
+    local -r repl="'\\''"
+    printf "'%s'" "${1//\'/$repl}"
+}
+
+# If the argument refers to an existing file of any type, append it to
+# the externally defined srcs array after trimming leading spaces and
+# tabs.
+append_to_srcs() {
+    if [[ ! $1 =~ [^[:blank:]].* || ${BASH_REMATCH[0]} == \#* ]]; then
+        return 1
+    fi
+    if [[ ! -e ${BASH_REMATCH[0]} ]]; then
+        echo "Skipping nonexistent source $(quote "${BASH_REMATCH[0]}")" >&2
+        return 2
+    fi
+    srcs+=("${BASH_REMATCH[0]}")
+}
+
+# TODO Explain what this does.
+graft() {
+    local -r graft_dir="$1" srcs_file="$2"
+
+    if ! mkdir -p "${graft_dir}"; then
+        echo "Could not create graft directory $(quote "${graft_dir}")" >&2
+        return 1
+    fi
+
+    # https://mjtsai.com/blog/2017/04/06/excluding-files-from-spotlight-and-time-machine
+    if [[ ! -e ${graft_dir}/.metadata_never_index ]]; then
+        touch "${graft_dir}/.metadata_never_index"
+    fi
+    tmutil addexclusion "${graft_dir}"
+
+    # Read the sources list, including any text after the final newline
+    # (http://mywiki.wooledge.org/BashFAQ/005#Loading_lines_from_a_file_or_stream).
+    local -a srcs
+    while read -r; do append_to_srcs "$REPLY"; done <"${srcs_file}"
+    append_to_srcs "$REPLY"
+    if (( ${#srcs[@]} < 1 )); then
+        echo "No sources found in $(quote "${srcs_file}")" >&2
+        return 2
+    fi
+
+    # Delete existing graft files whose corresponding originals no
+    # longer exist or are no longer selected by the source list.
+    local orig_file src graft_file
+    while IFS= read -rd '' graft_file; do
+        # The file may have been recursively deleted already.
+        [[ -e ${graft_file} ]] || continue
+
+        orig_file=${graft_file#"${graft_dir}"}
+        if [[ -e ${orig_file} ]]; then
+            for src in "${srcs[@]}"; do
+                # Original is the source or its descendant.
+                [[ ${orig_file}/ == "$src"/* ]] && continue 2
+
+                # Original is an ancestor of the source. This happens
+                # because find(1) traverses intermediate directories.
+                [[ $src/ == "${orig_file}"/* ]] && continue 2
+            done
+        fi
+        rm -fR "${graft_file}"
+    done < <(find "${graft_dir}" -depth 0 -o -type f -depth 1 -o -print0)
+
+    # Recreate each source hierarchy under the graft directory using
+    # hard links. Broken graft-side links are overwritten, while pax(1)
+    # leaves intact links alone.
+    pax -rwlp e "${srcs[@]}" "${graft_dir}" 2>&1 >/dev/null \
+        | grep -v 'Unable to link file ..* to itself' >&2
+    return $((PIPESTATUS[0] == 0 ? 0 : PIPESTATUS[0] + 2))
+}
+
+# Work from $HOME so that relative paths resolve to something sane.
+cd ~ || exit 1
+
+if [[ ! -d $1 ]]; then
+    echo "No destination directory $(quote "$1")" >&2
+    exit 2
+fi
+
+graft "$1/Graft" "$1/graft-sources.txt" || exit $(($? + 2))
