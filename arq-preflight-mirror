@@ -1,0 +1,187 @@
+#!/usr/bin/env sh
+
+# arq-preflight-mirror - Maintain hard-linked directory mirrors
+#
+# Written in 2019 by Lawrence Velázquez <vq@larryv.me>
+#
+# To the extent possible under law, the author(s) have dedicated all
+# copyright and related and neighboring rights to this software to the
+# public domain worldwide. This software is distributed without any
+# warranty.
+#
+# You should have received a copy of the CC0 Public Domain Dedication
+# along with this software. If not, see
+# <https://creativecommons.org/publicdomain/zero/1.0/>.
+
+
+readonly E_USAGE=1
+readonly E_SRCS_UNUSABLE=2
+readonly E_DST_UNUSABLE=3
+readonly E_CP_UNUSABLE=4
+readonly E_RSYNC_UNUSABLE=5
+readonly E_CACHE_CMP=6
+readonly E_CACHE_COPY=7
+readonly E_DST_PURGE=8
+readonly E_MIRROR_COPY=9
+readonly E_MIRROR_PRUNE=10
+
+
+# Print arguments to standard error.
+err() {
+    for msg; do
+        printf '%s: %s\n' "${0##*/}" "$msg" >&2
+    done
+}
+
+
+# Parse command-line arguments and configure the program accordingly.
+init() {
+    unset SHOW_USAGE VERBOSE
+    : "${CP:=cp}" "${RSYNC:=rsync}"
+    USE_LF_DELIM=yes
+    OPTIND=1
+    while getopts 0c:hr:v opt; do
+        case $opt in
+            0) unset USE_LF_DELIM ;;
+            c) CP=$OPTARG ;;
+            h) SHOW_USAGE=yes; return ;;
+            r) RSYNC=$OPTARG ;;
+            v) VERBOSE=yes ;;
+            *) return $E_USAGE ;;
+        esac
+    done
+    readonly CP RSYNC SHOW_USAGE USE_LF_DELIM VERBOSE
+
+    shift $((OPTIND - 1))
+    [ $# -eq 2 ] || { err 'Exactly 2 arguments required'; return $E_USAGE; }
+    readonly SRCS="$1"
+    readonly DST="$2"
+}
+
+
+# Mirror the paths in the sources file to the destination. The directory
+# hierarchies implied by the source paths are replicated under the
+# destination (e.g., /foo/bar/baz -> $DST/foo/bar/baz).
+mirror() {
+    # Files in the destination may become orphaned if paths are removed
+    # from the sources file. Instead of searching for such files with
+    # care, purge the destination completely if the sources file has
+    # changed at all. (This mess preserves cmp(1) error messages:
+    # <https://pubs.opengroup.org/onlinepubs/9699919799/utilities/cmp.html#tag_20_20_16>.)
+    msg=$({ [ -f "$CACHED_SRCS" ] && cmp -- "$CACHED_SRCS" "$SRCS"; } \
+        2>&1 >/dev/null)
+    case $? in
+        0)
+            ;;
+        1)
+            verbose_msg 'Source list has changed, purging DST'
+            find -f "$DST" -- -mindepth 1 -delete || return $E_DST_PURGE
+            verbose_msg "Caching SRCS: $CACHED_SRCS"
+            (umask a-w && cp -- "$SRCS" "$CACHED_SRCS") || return $E_CACHE_COPY
+            ;;
+        *)
+            err "$msg"
+            return $E_CACHE_CMP
+            ;;
+    esac
+
+    # Use `--preserve=ownership,timestamps` instead of `--archive` to
+    # drop directories' ACLs (while preserving modes). This prevents
+    # "deny delete" ACLs from breaking subsequent purge and prune steps,
+    # as Arq runs preflight/postflight scripts without privileges.
+    verbose_msg 'Adding new files:'
+    tr -s ${USE_LF_DELIM+'\n'} '\0' <"$CACHED_SRCS" | xargs -0J % -- \
+        "$CP" --force --link --no-dereference --parents \
+            --preserve=ownership,timestamps --recursive \
+            ${VERBOSE+--verbose} -- % "$DST" \
+        || return $E_MIRROR_COPY
+
+    # NOTE: This does not remove files outside the mirrored paths.
+    verbose_msg 'Pruning extraneous files:'
+    tr -s ${USE_LF_DELIM+'\n'} '\0' <"$CACHED_SRCS" | xargs -0J % -- \
+        "$RSYNC" --delete --ignore-existing --ignore-non-existing --recursive \
+            --relative ${VERBOSE+--verbose} -- % "$DST" \
+        || return $E_MIRROR_PRUNE
+}
+
+
+# Print a usage message to standard output.
+show_usage() {
+    cat <<EOF
+usage: ${0##*/} [options] sources_file destination_dir
+
+Read paths of files and directories from sources_file and mirror them to
+destination_dir (e.g., /foo/bar/baz -> destination_dir/foo/bar/baz),
+possibly deleting other items under destination_dir. Hard links are used
+when possible.
+
+See <https://github.com/larryv/arq-helpers> for more information.
+
+Options:
+  -0                delimit paths in sources_file with NUL instead of LF
+  -c <cp path>      use an alternate cp(1)
+  -h                display this usage message and exit
+  -r <rsync path>   use an alternate rsync(1)
+  -v                print extra status messages to standard output
+EOF
+}
+
+
+# Perform basic sanity checks on important paths.
+validate_paths() {
+    [ -f "$SRCS" ] \
+        || { err "Not a file: $SRCS"; return $E_SRCS_UNUSABLE; }
+    [ -r "$SRCS" ] \
+        || { err "Read permission denied: $SRCS"; return $E_SRCS_UNUSABLE; }
+    [ -d "$DST" ] \
+        || { err "Not a directory: $DST"; return $E_DST_UNUSABLE; }
+    [ -r "$DST" ] \
+        || { err "Read permission denied: $DST"; return $E_DST_UNUSABLE; }
+    [ -w "$DST" ] \
+        || { err "Write permission denied: $DST"; return $E_DST_UNUSABLE; }
+    command -v -- "$CP" >/dev/null \
+        || { err "Command not found: $CP"; return $E_CP_UNUSABLE; }
+    command -v -- "$RSYNC" >/dev/null \
+        || { err "Command not found: $RSYNC"; return $E_RSYNC_UNUSABLE; }
+}
+
+
+# Print arguments to standard output if program is in verbose mode.
+verbose_msg() {
+    if [ -n "${VERBOSE+isset}" ]; then
+        printf '%s\n' "$@"
+    fi
+}
+
+
+main() {
+    # Initialize program state.
+    init "$@" || { status=$?; show_usage >&2; return $status; }
+
+    # Give the -h option highest precedence.
+    [ -n "${SHOW_USAGE+isset}" ] && { show_usage; return 0; }
+
+    # Summarize program configuration.
+    verbose_msg "CP: $CP" "RSYNC: $RSYNC"
+    if [ -n "${USE_LF_DELIM+isset}" ]; then
+        verbose_msg "SRCS (LF-delimited): $SRCS"
+    else
+        verbose_msg "SRCS (NUL-delimited): $SRCS"
+    fi
+    verbose_msg "DST: $DST"
+
+    # This isn't strictly necessary, but otherwise there's a code path
+    # in mirror() wherein the destination is purged before anything else
+    # verifies that the sources file is usable.
+    validate_paths || return
+
+    case $DST in
+        */) readonly CACHED_SRCS="$DST${SRCS##*/}.cached" ;;
+        *) readonly CACHED_SRCS="$DST/${SRCS##*/}.cached" ;;
+    esac
+
+    mirror
+}
+
+
+main "$@"
