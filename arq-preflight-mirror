@@ -37,20 +37,19 @@ err() {
 # Parse command-line arguments and configure the program accordingly.
 init() {
     unset SHOW_USAGE VERBOSE
-    : "${CP:=cp}" "${RSYNC:=rsync}"
     USE_LF_DELIM=yes
     OPTIND=1
-    while getopts 0c:hr:v opt; do
+    while getopts 0hv opt; do
         case $opt in
             0) unset USE_LF_DELIM ;;
-            c) CP=$OPTARG ;;
             h) SHOW_USAGE=yes; return ;;
-            r) RSYNC=$OPTARG ;;
             v) VERBOSE=yes ;;
             *) return $E_USAGE ;;
         esac
     done
-    readonly CP RSYNC SHOW_USAGE USE_LF_DELIM VERBOSE
+    readonly SHOW_USAGE USE_LF_DELIM VERBOSE
+
+    : "${CP:=cp}" "${RSYNC:=rsync}"
 
     shift $((OPTIND - 1))
     [ $# -eq 2 ] || { err 'Exactly 2 arguments required'; return $E_USAGE; }
@@ -108,7 +107,7 @@ mirror() {
 # Print a usage message to standard output.
 show_usage() {
     cat <<EOF
-usage: ${0##*/} [options] sources_file destination_dir
+usage: ${0##*/} [-0hv] sources_file destination_dir
 
 Read paths of files and directories from sources_file and mirror them to
 destination_dir (e.g., /foo/bar/baz -> destination_dir/foo/bar/baz),
@@ -119,9 +118,7 @@ See <https://github.com/larryv/arq-helpers> for more information.
 
 Options:
   -0                delimit paths in sources_file with NUL instead of LF
-  -c <cp path>      use an alternate cp(1)
   -h                display this usage message and exit
-  -r <rsync path>   use an alternate rsync(1)
   -v                print extra status messages to standard output
 EOF
 }
