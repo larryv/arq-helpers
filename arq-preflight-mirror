@@ -1,8 +1,8 @@
 #!/usr/bin/env sh
 
-# arq-preflight-mirror - Maintain hard-linked directory mirrors
+# arq-preflight-mirror - Maintain a directory of hard-linked mirrors
 #
-# Written in 2019 by Lawrence Velázquez <vq@larryv.me>
+# Written in 2019 by Lawrence Velázquez <vq@larryv.me>.
 #
 # To the extent possible under law, the author(s) have dedicated all
 # copyright and related and neighboring rights to this software to the
@@ -65,8 +65,7 @@ mirror() {
     # Files in the destination may become orphaned if paths are removed
     # from the sources file. Instead of searching for such files with
     # care, purge the destination completely if the sources file has
-    # changed at all. (This mess preserves cmp(1) error messages:
-    # <https://pubs.opengroup.org/onlinepubs/9699919799/utilities/cmp.html#tag_20_20_16>.)
+    # changed at all. (This mess preserves cmp(1) error messages [1].)
     msg=$({ [ -f "$CACHED_SRCS" ] && cmp -- "$CACHED_SRCS" "$SRCS"; } \
         2>&1 >/dev/null)
     case $? in
@@ -74,6 +73,7 @@ mirror() {
             ;;
         1)
             verbose_msg 'Source list has changed, purging DST'
+            # Delete with find(1) to avoid ARG_MAX problems [2].
             find -f "$DST" -- -mindepth 1 -delete || return $E_DST_PURGE
             verbose_msg "Caching SRCS: $CACHED_SRCS"
             (umask a-w && cp -- "$SRCS" "$CACHED_SRCS") || return $E_CACHE_COPY
@@ -95,7 +95,7 @@ mirror() {
             ${VERBOSE+--verbose} -- % "$DST" \
         || return $E_MIRROR_COPY
 
-    # NOTE: This does not remove files outside the mirrored paths.
+    # FIXME: This does not remove files outside the mirrored paths.
     verbose_msg 'Pruning extraneous files:'
     tr -s ${USE_LF_DELIM+'\n'} '\0' <"$CACHED_SRCS" | xargs -0J % -- \
         "$RSYNC" --delete --ignore-existing --ignore-non-existing --recursive \
@@ -182,3 +182,8 @@ main() {
 
 
 main "$@"
+
+
+# References
+#    1. https://pubs.opengroup.org/onlinepubs/9699919799/utilities/cmp.html#tag_20_20_16
+#    2. https://www.in-ulm.de/~mascheck/various/argmax
