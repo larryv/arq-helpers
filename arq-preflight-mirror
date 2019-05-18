@@ -19,13 +19,12 @@
 readonly E_USAGE=1
 readonly E_SRCS_UNUSABLE=2
 readonly E_DST_UNUSABLE=3
-readonly E_CP_UNUSABLE=4
-readonly E_RSYNC_UNUSABLE=5
-readonly E_CACHE_CMP=6
-readonly E_CACHE_COPY=7
-readonly E_DST_PURGE=8
-readonly E_MIRROR_COPY=9
-readonly E_MIRROR_PRUNE=10
+readonly E_TOOLS=4
+readonly E_CACHE_CMP=5
+readonly E_CACHE_COPY=6
+readonly E_DST_PURGE=7
+readonly E_MIRROR_COPY=8
+readonly E_MIRROR_PRUNE=9
 
 
 # Read source paths from standard input and add them to the given
@@ -137,10 +136,23 @@ validate_paths() {
         || { err "Read permission denied: $DST"; return $E_DST_UNUSABLE; }
     [ -w "$DST" ] \
         || { err "Write permission denied: $DST"; return $E_DST_UNUSABLE; }
-    command -v -- "$CP" >/dev/null \
-        || { err "Command not found: $CP"; return $E_CP_UNUSABLE; }
-    command -v -- "$RSYNC" >/dev/null \
-        || { err "Command not found: $RSYNC"; return $E_RSYNC_UNUSABLE; }
+}
+
+
+# Ensure that necessary non-POSIX functionality appears available.
+validate_tools() {
+    # Use home directory for portable temporary directories [3].
+    tmpdir=~/${0##*/}.tmp.$$
+    mkdir -- "$tmpdir" || return
+    trap 'rm -fR -- "$tmpdir"' EXIT
+    for sig in HUP INT QUIT TERM; do
+        # Let the shell produce its "killed by signal" exit status.
+        trap 'rm -fR -- "$tmpdir"; trap - '$sig'; kill -s '$sig' $$' $sig
+    done
+
+    mkdir -- "$tmpdir/a" "$tmpdir/b" \
+        && printf '%s' "$tmpdir/a" | add_to_mirror "$tmpdir/b" >/dev/null \
+        && printf '%s' "$tmpdir/a" | prune_mirror "$tmpdir/b" >/dev/null
 }
 
 
@@ -168,10 +180,11 @@ main() {
     fi
     verbose_msg "DST: $DST"
 
-    # This isn't strictly necessary, but otherwise there's a code path
-    # in mirror() wherein the destination is purged before anything else
-    # verifies that the sources file is usable.
+    # These aren't strictly necessary, but otherwise there are code
+    # paths in mirror() wherein the destination is purged before the
+    # sources file or tools are verified to be usable.
     validate_paths || return
+    validate_tools || return $E_TOOLS
 
     case $DST in
         */) readonly CACHED_SRCS="$DST${SRCS##*/}.cached" ;;
@@ -203,3 +216,4 @@ main "$@"
 # References
 #    1. https://pubs.opengroup.org/onlinepubs/9699919799/utilities/cmp.html#tag_20_20_16
 #    2. https://www.in-ulm.de/~mascheck/various/argmax
+#    3. https://mywiki.wooledge.org/BashFAQ/062
