@@ -17,13 +17,12 @@
 
 
 readonly E_USAGE=1
-readonly E_SRCS_UNUSABLE=2
+readonly E_SRCS=2
 readonly E_TOOLS=3
-readonly E_CACHE_CMP=4
-readonly E_CACHE_COPY=5
-readonly E_DST_PURGE=6
-readonly E_MIRROR_COPY=7
-readonly E_MIRROR_PRUNE=8
+readonly E_CACHE=4
+readonly E_PURGE=5
+readonly E_ADD=6
+readonly E_PRUNE=7
 
 
 # Read source paths from standard input and add them to the given
@@ -88,9 +87,9 @@ prune_mirror() {
 purge_mirror() {
     verbose_msg 'Source list has changed, purging DST...'
     # Invoke rm(1) via find(1) to avoid ARG_MAX problems [2].
-    find "$DST" ! -path "$DST" -prune -exec rm -fR {} + || return $E_DST_PURGE
+    find "$DST" ! -path "$DST" -prune -exec rm -fR {} + || return $E_PURGE
     verbose_msg "Caching SRCS: $CACHED_SRCS"
-    (umask a-w && cp "$SRCS" "$CACHED_SRCS") || return $E_CACHE_COPY
+    (umask a-w && cp "$SRCS" "$CACHED_SRCS") || return $E_CACHE
 }
 
 
@@ -167,8 +166,8 @@ main() {
     # These aren't strictly necessary, but otherwise there are code
     # paths in mirror() wherein the destination is purged before the
     # sources file or tools are verified to be usable.
-    [ -f "$SRCS" ] || { err "Not a file: $SRCS"; return $E_SRCS_UNUSABLE; }
-    [ -r "$SRCS" ] || { err "Read permission denied: $SRCS"; return $E_SRCS_UNUSABLE; }
+    [ -f "$SRCS" ] || { err "Not a file: $SRCS"; return $E_SRCS; }
+    [ -r "$SRCS" ] || { err "Read permission denied: $SRCS"; return $E_SRCS; }
     validate_tools || return $E_TOOLS
 
     case $DST in
@@ -184,14 +183,14 @@ main() {
     case $? in
         0) ;;
         1) purge_mirror || return ;;
-        *) err "$msg"; return $E_CACHE_CMP ;;
+        *) err "$msg"; return $E_CACHE ;;
     esac
 
     verbose_msg 'Adding new files...'
-    add_to_mirror "$DST" <"$CACHED_SRCS" || return $E_MIRROR_COPY
+    add_to_mirror "$DST" <"$CACHED_SRCS" || return $E_ADD
 
     verbose_msg 'Pruning extraneous files...'
-    prune_mirror "$DST" <"$CACHED_SRCS" || return $E_MIRROR_PRUNE
+    prune_mirror "$DST" <"$CACHED_SRCS" || return $E_PRUNE
 }
 
 
