@@ -28,6 +28,20 @@ readonly E_MIRROR_COPY=9
 readonly E_MIRROR_PRUNE=10
 
 
+# Read source paths from standard input and add them to the given
+# directory. The hierarchies implied by the source paths are replicated
+# under the directory (e.g., /foo/bar/baz -> /backup/dir/foo/bar/baz).
+add_to_mirror() {
+    # Use `--preserve=ownership,timestamps` instead of `--archive` to
+    # drop directories' ACLs (while preserving modes). This prevents
+    # "deny delete" ACLs from breaking subsequent purge and prune steps,
+    # as Arq runs preflight/postflight scripts without privileges.
+    tr -s ${USE_LF_DELIM+'\n'} '\0' | xargs -0J % -- "$CP" --force --link \
+        --no-dereference --parents --preserve=ownership,timestamps \
+        --recursive ${VERBOSE+--verbose} -- % "$1"
+}
+
+
 # Print arguments to standard error.
 err() {
     for msg; do
@@ -61,49 +75,24 @@ init() {
 }
 
 
-# Mirror the paths in the sources file to the destination. The directory
-# hierarchies implied by the source paths are replicated under the
-# destination (e.g., /foo/bar/baz -> $DST/foo/bar/baz).
-mirror() {
-    # Files in the destination may become orphaned if paths are removed
-    # from the sources file. Instead of searching for such files with
-    # care, purge the destination completely if the sources file has
-    # changed at all. (This mess preserves cmp(1) error messages [1].)
-    msg=$({ [ -f "$CACHED_SRCS" ] && cmp -- "$CACHED_SRCS" "$SRCS"; } \
-        2>&1 >/dev/null)
-    case $? in
-        0)
-            ;;
-        1)
-            verbose_msg 'Source list has changed, purging DST'
-            # Delete with find(1) to avoid ARG_MAX problems [2].
-            find "$DST" ! -path "$DST" -prune -exec rm -fR {} + || return $E_DST_PURGE
-            verbose_msg "Caching SRCS: $CACHED_SRCS"
-            (umask a-w && cp -- "$SRCS" "$CACHED_SRCS") || return $E_CACHE_COPY
-            ;;
-        *)
-            err "$msg"
-            return $E_CACHE_CMP
-            ;;
-    esac
+# Prune the given directory based on the contents of the sources, which
+# are read from standard input. The directory should have been populated
+# by an earlier call to add_to_mirror. BUG: This does not prune outside
+# of the mirrored directory trees.
+prune_mirror() {
+    tr -s ${USE_LF_DELIM+'\n'} '\0' | xargs -0J % -- "$RSYNC" --delete \
+        --ignore-existing --ignore-non-existing --recursive --relative \
+        ${VERBOSE+--verbose} -- % "$1"
+}
 
-    # Use `--preserve=ownership,timestamps` instead of `--archive` to
-    # drop directories' ACLs (while preserving modes). This prevents
-    # "deny delete" ACLs from breaking subsequent purge and prune steps,
-    # as Arq runs preflight/postflight scripts without privileges.
-    verbose_msg 'Adding new files:'
-    tr -s ${USE_LF_DELIM+'\n'} '\0' <"$CACHED_SRCS" | xargs -0J % -- \
-        "$CP" --force --link --no-dereference --parents \
-            --preserve=ownership,timestamps --recursive \
-            ${VERBOSE+--verbose} -- % "$DST" \
-        || return $E_MIRROR_COPY
 
-    # FIXME: This does not remove files outside the mirrored paths.
-    verbose_msg 'Pruning extraneous files:'
-    tr -s ${USE_LF_DELIM+'\n'} '\0' <"$CACHED_SRCS" | xargs -0J % -- \
-        "$RSYNC" --delete --ignore-existing --ignore-non-existing --recursive \
-            --relative ${VERBOSE+--verbose} -- % "$DST" \
-        || return $E_MIRROR_PRUNE
+# Delete everything in $DST and make a fresh copy of $SRCS.
+purge_mirror() {
+    verbose_msg 'Source list has changed, purging DST...'
+    # Invoke rm(1) via find(1) to avoid ARG_MAX problems [2].
+    find "$DST" ! -path "$DST" -prune -exec rm -fR {} + || return $E_DST_PURGE
+    verbose_msg "Caching SRCS: $CACHED_SRCS"
+    (umask a-w && cp "$SRCS" "$CACHED_SRCS") || return $E_CACHE_COPY
 }
 
 
@@ -187,9 +176,24 @@ main() {
     case $DST in
         */) readonly CACHED_SRCS="$DST${SRCS##*/}.cached" ;;
         *) readonly CACHED_SRCS="$DST/${SRCS##*/}.cached" ;;
+
+    # Files in the destination may become orphaned if paths are removed
+    # from the sources file. Instead of searching for such files with
+    # care, purge the destination completely if the sources file has
+    # changed at all. (This mess preserves cmp(1) error messages [1].)
+    msg=$({ [ -f "$CACHED_SRCS" ] && cmp "$CACHED_SRCS" "$SRCS"; } \
+        2>&1 >/dev/null)
+    case $? in
+        0) ;;
+        1) purge_mirror || return ;;
+        *) err "$msg"; return $E_CACHE_CMP ;;
     esac
 
-    mirror
+    verbose_msg 'Adding new files...'
+    add_to_mirror "$DST" <"$CACHED_SRCS" || return $E_MIRROR_COPY
+
+    verbose_msg 'Pruning extraneous files...'
+    prune_mirror "$DST" <"$CACHED_SRCS" || return $E_MIRROR_PRUNE
 }
 
 
