@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 
-# arq-preflight-mirror - Maintain a directory of hard-linked mirrors
+# arq-preflight-mirror - Maintain a hard-linked backup mirror
 #
 # For a usage summary, run `arq-preflight-mirror -h`.
 #
@@ -32,7 +32,8 @@ add_to_mirror() {
     # Use `--preserve=ownership,timestamps` instead of `--archive` to
     # drop directories' ACLs (while preserving modes). This prevents
     # "deny delete" ACLs from breaking subsequent purge and prune steps,
-    # as Arq runs preflight/postflight scripts without privileges.
+    # as Arq runs preflight/postflight scripts without privileges. NOTE:
+    # `xargs -0J` is non-POSIX [1].
     tr -s ${USE_LF_DELIM+'\n'} '\0' | xargs -0J % -- "$CP" --force --link \
         --no-dereference --parents --preserve=ownership,timestamps \
         --recursive ${VERBOSE+--verbose} -- % "$1"
@@ -47,7 +48,7 @@ err() {
 }
 
 
-# Parse command-line arguments and configure the program accordingly.
+# Parse arguments and configure the program accordingly.
 init() {
     unset SHOW_USAGE VERBOSE
     USE_LF_DELIM=yes
@@ -83,6 +84,7 @@ init() {
 # by an earlier call to add_to_mirror. BUG: This does not prune outside
 # of the mirrored directory trees.
 prune_mirror() {
+    # NOTE: `xargs -0J` is non-POSIX [1].
     tr -s ${USE_LF_DELIM+'\n'} '\0' | xargs -0J % -- "$RSYNC" --delete \
         --ignore-existing --ignore-non-existing --recursive --relative \
         ${VERBOSE+--verbose} -- % "$1"
@@ -154,13 +156,9 @@ verbose_msg() {
 
 
 main() {
-    # Initialize program state.
     init "$@" || { status=$?; show_usage >&2; return $status; }
-
-    # Give the -h option highest precedence.
     [ -n "${SHOW_USAGE+isset}" ] && { show_usage; return 0; }
 
-    # Summarize program configuration.
     verbose_msg "CP: $CP" "RSYNC: $RSYNC"
     if [ -n "${USE_LF_DELIM+isset}" ]; then
         verbose_msg "SRCS (LF-delimited): $SRCS" "DST: $DST"
@@ -168,9 +166,8 @@ main() {
         verbose_msg "SRCS (NUL-delimited): $SRCS" "DST: $DST"
     fi
 
-    # These aren't strictly necessary, but otherwise there are code
-    # paths in mirror() wherein the destination is purged before the
-    # sources file or tools are verified to be usable.
+    # Make sure the sources file and tools are usable before potentially
+    # purging the destination.
     [ -f "$SRCS" ] || { err "Not a file: $SRCS"; return $E_SRCS; }
     [ -r "$SRCS" ] || { err "Read permission denied: $SRCS"; return $E_SRCS; }
     validate_tools || return $E_TOOLS
@@ -178,7 +175,7 @@ main() {
     # Files in the destination may become orphaned if paths are removed
     # from the sources file. Instead of searching for such files with
     # care, purge the destination completely if the sources file has
-    # changed at all. (This mess preserves cmp(1) error messages [1].)
+    # changed at all. (This mess preserves cmp(1) error messages [4].)
     msg=$({ [ -f "$CACHED_SRCS" ] && cmp "$CACHED_SRCS" "$SRCS"; } \
         2>&1 >/dev/null)
     case $? in
@@ -199,6 +196,7 @@ main "$@"
 
 
 # References
-#    1. https://pubs.opengroup.org/onlinepubs/9699919799/utilities/cmp.html#tag_20_20_16
+#    1. https://pubs.opengroup.org/onlinepubs/9699919799/utilities/xargs.html
 #    2. https://www.in-ulm.de/~mascheck/various/argmax
 #    3. https://mywiki.wooledge.org/BashFAQ/062
+#    4. https://pubs.opengroup.org/onlinepubs/9699919799/utilities/cmp.html#tag_20_20_16
