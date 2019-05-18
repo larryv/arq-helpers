@@ -55,8 +55,9 @@ init() {
 
     shift $((OPTIND - 1))
     [ $# -eq 2 ] || { err 'Exactly 2 arguments required'; return $E_USAGE; }
-    readonly SRCS="$1"
-    readonly DST="$2"
+    case $1 in -*) SRCS=./$1 ;; *) SRCS=$1 ;; esac
+    case $2 in -*) DST=./$2 ;; *) DST=$2 ;; esac
+    readonly DST SRCS
 }
 
 
@@ -76,7 +77,7 @@ mirror() {
         1)
             verbose_msg 'Source list has changed, purging DST'
             # Delete with find(1) to avoid ARG_MAX problems [2].
-            find -f "$DST" -- -mindepth 1 -delete || return $E_DST_PURGE
+            find "$DST" ! -path "$DST" -prune -exec rm -fR {} + || return $E_DST_PURGE
             verbose_msg "Caching SRCS: $CACHED_SRCS"
             (umask a-w && cp -- "$SRCS" "$CACHED_SRCS") || return $E_CACHE_COPY
             ;;
