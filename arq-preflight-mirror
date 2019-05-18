@@ -62,13 +62,19 @@ init() {
     done
     readonly SHOW_USAGE USE_LF_DELIM VERBOSE
 
-    : "${CP:=cp}" "${RSYNC:=rsync}"
-
     shift $((OPTIND - 1))
     [ $# -eq 2 ] || { err 'Exactly 2 arguments required'; return $E_USAGE; }
     case $1 in -*) SRCS=./$1 ;; *) SRCS=$1 ;; esac
     case $2 in -*) DST=./$2 ;; *) DST=$2 ;; esac
     readonly DST SRCS
+
+    case $DST in
+        */) readonly CACHED_SRCS="$DST${SRCS##*/}.cached" ;;
+        *) readonly CACHED_SRCS="$DST/${SRCS##*/}.cached" ;;
+    esac
+
+    : "${CP:=cp}" "${RSYNC:=rsync}"
+    readonly CP RSYNC
 }
 
 
@@ -157,11 +163,10 @@ main() {
     # Summarize program configuration.
     verbose_msg "CP: $CP" "RSYNC: $RSYNC"
     if [ -n "${USE_LF_DELIM+isset}" ]; then
-        verbose_msg "SRCS (LF-delimited): $SRCS"
+        verbose_msg "SRCS (LF-delimited): $SRCS" "DST: $DST"
     else
-        verbose_msg "SRCS (NUL-delimited): $SRCS"
+        verbose_msg "SRCS (NUL-delimited): $SRCS" "DST: $DST"
     fi
-    verbose_msg "DST: $DST"
 
     # These aren't strictly necessary, but otherwise there are code
     # paths in mirror() wherein the destination is purged before the
@@ -169,10 +174,6 @@ main() {
     [ -f "$SRCS" ] || { err "Not a file: $SRCS"; return $E_SRCS; }
     [ -r "$SRCS" ] || { err "Read permission denied: $SRCS"; return $E_SRCS; }
     validate_tools || return $E_TOOLS
-
-    case $DST in
-        */) readonly CACHED_SRCS="$DST${SRCS##*/}.cached" ;;
-        *) readonly CACHED_SRCS="$DST/${SRCS##*/}.cached" ;;
 
     # Files in the destination may become orphaned if paths are removed
     # from the sources file. Instead of searching for such files with
