@@ -18,13 +18,12 @@
 
 readonly E_USAGE=1
 readonly E_SRCS_UNUSABLE=2
-readonly E_DST_UNUSABLE=3
-readonly E_TOOLS=4
-readonly E_CACHE_CMP=5
-readonly E_CACHE_COPY=6
-readonly E_DST_PURGE=7
-readonly E_MIRROR_COPY=8
-readonly E_MIRROR_PRUNE=9
+readonly E_TOOLS=3
+readonly E_CACHE_CMP=4
+readonly E_CACHE_COPY=5
+readonly E_DST_PURGE=6
+readonly E_MIRROR_COPY=7
+readonly E_MIRROR_PRUNE=8
 
 
 # Read source paths from standard input and add them to the given
@@ -124,21 +123,6 @@ EOF
 }
 
 
-# Perform basic sanity checks on important paths.
-validate_paths() {
-    [ -f "$SRCS" ] \
-        || { err "Not a file: $SRCS"; return $E_SRCS_UNUSABLE; }
-    [ -r "$SRCS" ] \
-        || { err "Read permission denied: $SRCS"; return $E_SRCS_UNUSABLE; }
-    [ -d "$DST" ] \
-        || { err "Not a directory: $DST"; return $E_DST_UNUSABLE; }
-    [ -r "$DST" ] \
-        || { err "Read permission denied: $DST"; return $E_DST_UNUSABLE; }
-    [ -w "$DST" ] \
-        || { err "Write permission denied: $DST"; return $E_DST_UNUSABLE; }
-}
-
-
 # Ensure that necessary non-POSIX functionality appears available.
 validate_tools() {
     # Use home directory for portable temporary directories [3].
@@ -183,7 +167,8 @@ main() {
     # These aren't strictly necessary, but otherwise there are code
     # paths in mirror() wherein the destination is purged before the
     # sources file or tools are verified to be usable.
-    validate_paths || return
+    [ -f "$SRCS" ] || { err "Not a file: $SRCS"; return $E_SRCS_UNUSABLE; }
+    [ -r "$SRCS" ] || { err "Read permission denied: $SRCS"; return $E_SRCS_UNUSABLE; }
     validate_tools || return $E_TOOLS
 
     case $DST in
