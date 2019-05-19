@@ -108,22 +108,22 @@ usage: ${0##*/} [-0hv] sources_file destination_dir
 
 The files and directories listed in sources_file are mirrored to
 destination_dir under their full paths (e.g., '/foo/bar/baz' becomes
-'/backup/dir/foo/bar/baz'). Directories are handled recursively. Items
-in destination_dir that no longer exist under their corresponding source
-path are deleted.
+'/backup/dir/foo/bar/baz'). Files are hard-linked to save disk space.
+Directories are processed recursively.
 
-Files are hard-linked to save disk space, so the sources must be on the
-same device as destination_dir. Directory modes are preserved but ACLs
-are not.
-
-The current implementation uses GNU cp(1), which is not included with
-macOS. Once installed from elsewhere, its path can be specified in the
-CP environment variable.
+Items in destination_dir that no longer exist under their corresponding
+source path are deleted. To prevent "deny delete" ACLs from interfering
+with this, directory ACLs are not preserved under destination_dir.
 
 Options:
   -0    delimit paths in sources_file with NUL instead of the default LF
   -h    display this usage message and exit
   -v    print extra status messages to standard output
+
+The current implementation uses GNU cp(1), which is not included with
+macOS. Once installed from elsewhere, its path can be specified in the
+CP environment variable. Optionally, an alternate rsync can be used via
+the RSYNC environment variable.
 
 See <https://github.com/larryv/arq-helpers> for more information.
 EOF

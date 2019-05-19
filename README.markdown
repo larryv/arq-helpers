@@ -27,35 +27,37 @@ a single destination directory. This is useful for backing up isolated
 items in directories that should not otherwise be backed up: Instead of
 [excluding][6] everything else and continually checking for new items to
 deselect, the desired items can be mirrored to a separate directory that
-Arq fully backs up. (It would be preferable to move the items and link
+Arq backs up in full. (It would be preferable to move the items and link
 them back to the original location, but that is sometimes infeasible.)
 
     arq-preflight-mirror [-0hv] sources_file destination_dir
 
 The files and directories listed in `sources_file` are mirrored to
 `destination_dir` under their full paths (e.g., `/foo/bar/baz` is
-mirrored to `/backup/dir/foo/bar/baz`). Directories are handled
-recursively. Items in `destination_dir` are deleted if they no longer
-exist under their corresponding source path.
+mirrored to `/backup/dir/foo/bar/baz`). Files are hard-linked to save
+disk space, so the sources must be on the same device as
+`destination_dir`. Directories are processed recursively.
 
-Files are hard-linked to save disk space, so the sources must be on the
-same device as `destination_dir`. Directory modes are preserved but ACLs
-are not, to prevent "deny delete" ACLs from interfering with deletion.
-(Such ACLs are not stripped from files because that would remove them
-from the originals as well. Consequent problems must be resolved
-manually.)
+Items in `destination_dir` are deleted if they no longer exist under
+their corresponding source path. To prevent "deny delete" ACLs from
+interfering with this, directory ACLs are not preserved under
+`destination_dir`. (This measure cannot be applied to files because they
+are hard-linked, so problems stemming from file ACLs must be resolved by
+the user.)
 
-Paths in `sources_file` should be absolute. They must be NUL-delimited
-if the `-0` option is given; otherwise, they must be LF-delimited.
+Options are:
 
-The `-v` option causes the script to print extra status messages to
-standard output. The `-h` option causes it to print a usage message to
-standard output and exit.
+-   `-0`: Delimit paths in `sources_file` with NUL instead of the
+    default LF.
+-   `-h`: Print a usage message to standard output and exit.
+-   `-v`: Print extra status messages to standard output.
 
 The current implementation uses [GNU `cp(1)`][7], which is not included
-with macOS and must be obtained from your friendly neighborhood software
-distributor. Once installed, its path can be specified in the `CP`
+with macOS. After obtaining it from your friendly neighborhood software
+distributor, specify its path in the `CP` environment variable. If
+desired, a alternate [rsync][8] installation can be used via the `RSYNC`
 environment variable.
 
   [6]: https://www.arqbackup.com/docs/arqbackup/pages/excludes.html "Arq Help: Excluding Items Within a Folder"
   [7]: https://www.gnu.org/software/coreutils "GNU Coreutils"
+  [8]: https://rsync.samba.org
