@@ -30,9 +30,9 @@ deselect, the desired items can be mirrored to a separate directory that
 Arq backs up in full. (It would be preferable to move the items and link
 them back to the original location, but that is sometimes infeasible.)
 
-    arq-preflight-mirror [-0hv] sources_file destination_dir
+    arq-preflight-mirror [-0hv] source_list destination_dir
 
-The files and directories listed in `sources_file` are mirrored to
+The files and directories listed in `source_list` are mirrored to
 `destination_dir` under their full paths (e.g., `/foo/bar/baz` is
 mirrored to `/backup/dir/foo/bar/baz`). Files are hard-linked to save
 disk space, so the sources must be on the same device as
@@ -47,7 +47,7 @@ the user.)
 
 Options are:
 
--   `-0`: Delimit paths in `sources_file` with NUL instead of the
+-   `-0`: Delimit paths in `source_list` with NUL instead of the
     default LF.
 -   `-h`: Print a usage message to standard output and exit.
 -   `-v`: Print extra status messages to standard output.

@@ -4,7 +4,7 @@
 #
 # For a usage summary, run `arq-preflight-mirror -h`.
 #
-# Written in 2019 by Lawrence Velazquez <vq@larryv.me>.
+# Written in 2019, 2023 by Lawrence Velazquez <vq@larryv.me>.
 #
 # To the extent possible under law, the author has dedicated all
 # copyright and related and neighboring rights to this software to the
@@ -91,12 +91,13 @@ prune_mirror() {
 }
 
 
-# Delete everything in $DST and make a fresh copy of $SRCS.
+# Delete everything in the destination directory (but not the directory
+# itself) and make a fresh copy of the source list.
 purge_mirror() {
-    verbose_msg 'Source list has changed, purging DST...'
+    verbose_msg 'Source list has changed, purging destination...'
     # Invoke rm(1) via find(1) to avoid ARG_MAX problems [2].
     find "$DST" ! -path "$DST" -prune -exec rm -fR {} + || return $E_PURGE
-    verbose_msg "Caching SRCS: $CACHED_SRCS"
+    verbose_msg "Caching source list: $CACHED_SRCS"
     (umask a-w && cp "$SRCS" "$CACHED_SRCS") || return $E_CACHE
 }
 
@@ -104,9 +105,9 @@ purge_mirror() {
 # Print a usage message to standard output.
 show_usage() {
     cat <<EOF
-usage: ${0##*/} [-0hv] sources_file destination_dir
+usage: ${0##*/} [-0hv] source_list destination_dir
 
-The files and directories listed in sources_file are mirrored to
+The files and directories listed in source_list are mirrored to
 destination_dir under their full paths (e.g., '/foo/bar/baz' becomes
 '/backup/dir/foo/bar/baz'). Files are hard-linked to save disk space.
 Directories are processed recursively.
@@ -116,7 +117,7 @@ source path are deleted. To prevent "deny delete" ACLs from interfering
 with this, directory ACLs are not preserved under destination_dir.
 
 Options:
-  -0    delimit paths in sources_file with NUL instead of the default LF
+  -0    delimit paths in source_list with NUL instead of the default LF
   -h    display this usage message and exit
   -v    print extra status messages to standard output
 
@@ -159,12 +160,12 @@ main() {
     init "$@" || { status=$?; show_usage >&2; return $status; }
     [ -n "${SHOW_USAGE+isset}" ] && { show_usage; return 0; }
 
-    verbose_msg "CP: $CP" "RSYNC: $RSYNC"
     if [ -n "${USE_LF_DELIM+isset}" ]; then
-        verbose_msg "SRCS (LF-delimited): $SRCS" "DST: $DST"
+        verbose_msg "Source list (LF-delimited): $SRCS"
     else
-        verbose_msg "SRCS (NUL-delimited): $SRCS" "DST: $DST"
+        verbose_msg "Source list (NUL-delimited): $SRCS"
     fi
+    verbose_msg "Destination: $DST" "CP: $CP" "RSYNC: $RSYNC"
 
     # Make sure the sources file and tools are usable before potentially
     # purging the destination.
