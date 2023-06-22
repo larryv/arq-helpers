@@ -4,6 +4,8 @@
 #
 # For a usage summary, run `arq-preflight-mirror -h`.
 #
+# SPDX-License-Identifier: CC0-1.0
+#
 # Written in 2019, 2023 by Lawrence Velazquez <vq@larryv.me>.
 #
 # To the extent possible under law, the author has dedicated all
