@@ -1,5 +1,9 @@
 #!/usr/bin/env sh
 
+# ---------------------------------------------------------------------
+# NOTE: This program is no longer being maintained. Requiescat in pace.
+# ---------------------------------------------------------------------
+
 # arq-preflight-mirror - Maintain a hard-linked backup mirror
 #
 # For a usage summary, run `arq-preflight-mirror -h`.

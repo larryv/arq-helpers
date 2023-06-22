@@ -19,11 +19,19 @@
 
 # arq-helpers #
 
+---
+
+**NOTE:** This project is no longer being maintained. _Requiescat in
+pace._
+
+---
+
 These scripts streamline (or, arguably, complicate) using [Arq][1] on
 macOS. (The plural is aspirational, as there's currently only one. Maybe
-there will be more later!) Some of them might be made to work on Windows
-via [Cygwin][2] or an act of [Aslan][3], but I have neither the means nor
-the inclination nor a [wardrobe][4].
+there will be more later! [_Future me:_ There would not be more later.])
+Some of them might be made to work on Windows via [Cygwin][2] or an act
+of [Aslan][3], but I have neither the means nor the inclination nor
+a [wardrobe][4].
 
 To install, place them in an arbitrary location readable by any user who
 wants to use them. I use `/usr/local/bin` like a schmuck, but feel free
